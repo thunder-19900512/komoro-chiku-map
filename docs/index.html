@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>こもろ地区ガイド｜小諸市の10地区マップ</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root{--teal:#13897b;--teal-d:#0b5d54;--ink:#333;--sub:#67736e;--line:#e2e8e3}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;color:var(--ink)}
+  #app{display:flex;height:100vh}
+  #map{flex:1}
+  #side{width:340px;overflow-y:auto;border-left:1px solid var(--line);padding:16px 18px;background:#fff}
+  h1{font-size:1.05rem;margin:0 0 2px;color:var(--teal-d)}
+  .sub{font-size:.74rem;color:var(--sub);margin-bottom:10px}
+  .hint{font-size:.8rem;background:#eef6f3;border-radius:8px;padding:8px 10px;margin-bottom:10px}
+  .legend{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}
+  .legend span{font-size:.68rem;padding:2px 8px;border-radius:99px;color:#fff;cursor:pointer}
+  #card{border-top:1px solid var(--line);padding-top:10px}
+  #card h2{font-size:1.15rem;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+  #card .chip{width:14px;height:14px;border-radius:4px;display:inline-block}
+  .stats{display:flex;gap:10px;margin:8px 0}
+  .stat{background:#f4f8f6;border-radius:8px;padding:8px 12px;flex:1}
+  .stat b{font-size:1.25rem;color:var(--teal-d)}
+  .stat small{display:block;color:var(--sub);font-size:.68rem}
+  .ku{font-size:.8rem;line-height:1.7}
+  .ku b{color:var(--teal)}
+  .desc{font-size:.85rem;line-height:1.7}
+  .note{font-size:.68rem;color:var(--sub);margin-top:12px;border-top:1px dashed var(--line);padding-top:8px;line-height:1.6}
+  label.tgl{font-size:.78rem;display:flex;gap:6px;align-items:center;margin:6px 0}
+  @media(max-width:720px){#app{flex-direction:column}#map{height:55vh}#side{width:100%;flex:1}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+  <div id="side">
+    <h1>こもろ地区ガイド</h1>
+    <div class="sub">小諸市の10地区を知る（たたき台版）</div>
+    <div class="hint">地図の地区をクリックすると、その地区の紹介が出ます。</div>
+    <label class="tgl">塗り分け:
+      <select id="paintmode" style="font-size:.8rem;padding:2px 4px">
+        <option value="chiku">地区の色</option>
+        <option value="jinko">人口（小地域別）</option>
+        <option value="kourei">高齢化率（小地域別）</option>
+      </select>
+    </label>
+    <div class="legend" id="legend"></div>
+    <div id="card"><p class="desc">👈 まずはどこかの地区をタップ。</p></div>
+    <div class="note">
+      出典: 境界・人口・世帯 = 総務省統計局「令和2年国勢調査 小地域境界データ」（e-Stat）／
+      年齢構成 = 同「小地域集計 第3表 男女，年齢（5歳階級）別人口」（総数・再掲3区分）／
+      地区の区分 = 小諸市「行政区マップ」（平成26年）・「各地区の紹介」を基にした<b>おおよその対応</b>です。
+      正確な区界を示すものではありません。／ 地図: 地理院タイル
+      <br>作成: 山田ゆうじ（小諸市与良町）
+    </div>
+  </div>
+</div>
+<script>
+const map = new maplibregl.Map({
+  container:"map",
+  style:{version:8,sources:{gsi:{type:"raster",
+    tiles:["https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png"],
+    tileSize:256,attribution:"地理院タイル"}},
+    layers:[{id:"gsi",type:"raster",source:"gsi"}]},
+  center:[138.43,36.34],zoom:11
+});
+let INFO={}, _setupDone=false;
+new ResizeObserver(()=>map.resize()).observe(document.getElementById("map"));
+async function setup(){
+  if(_setupDone) return;
+  if(!map.isStyleLoaded()){ setTimeout(setup, 250); return; } // styleが準備できるまで待つ
+  map.resize();
+  const gj = await (await fetch("data.geojson")).json();
+  INFO = await (await fetch("chiku_info.json")).json();
+  if(!map.getSource("chiku")) map.addSource("chiku",{type:"geojson",data:gj});
+  if(!map.getLayer("fill")) map.addLayer({id:"fill",type:"fill",source:"chiku",paint:{
+    "fill-color":["get","color"],"fill-opacity":0.42}});
+  if(!map.getLayer("line")) map.addLayer({id:"line",type:"line",source:"chiku",paint:{
+    "line-color":"#ffffff","line-width":0.8}});
+  if(!map.getLayer("hl")) map.addLayer({id:"hl",type:"line",source:"chiku",paint:{
+    "line-color":"#0b5d54","line-width":2.5},filter:["==","chiku","__none__"]});
+  _setupDone=true; // ここまで例外なく来たら完了（途中で失敗した場合はstyledata/loadで再試行される）
+  // 凡例
+  const lg=document.getElementById("legend"); lg.innerHTML="";
+  Object.entries(INFO).sort((a,b)=>b[1].jinko-a[1].jinko).forEach(([c,i])=>{
+    const s=document.createElement("span");s.textContent=c;s.style.background=i.color;
+    s.onclick=()=>showCard(c);lg.appendChild(s);
+  });
+  map.on("click","fill",e=>showCard(e.features[0].properties.chiku,e.features[0].properties));
+  map.on("mouseenter","fill",()=>map.getCanvas().style.cursor="pointer");
+  map.on("mouseleave","fill",()=>map.getCanvas().style.cursor="");
+  // 塗り分け切替（地区色/人口/高齢化率）
+  document.getElementById("paintmode").onchange=ev=>{
+    const m=ev.target.value;
+    if(m==="jinko"){
+      map.setPaintProperty("fill","fill-color",
+        ["interpolate",["linear"],["get","jinko"],0,"#f2f7f5",100,"#c9e6de",400,"#7fc4b4",1000,"#2f9483",2500,"#0b5d54"]);
+    }else if(m==="kourei"){
+      map.setPaintProperty("fill","fill-color",
+        ["interpolate",["linear"],["coalesce",["get","kourei"],0],
+          15,"#f5f2ec",25,"#f5e6a3",35,"#eba95c",45,"#d1604d",60,"#8e2f23"]);
+    }else{
+      map.setPaintProperty("fill","fill-color",["get","color"]);
+    }
+  };
+  // データ追加後に一度視点を入れ直して確実に再描画させる（環境によりloadが遅延するため）
+  setTimeout(()=>map.jumpTo({center:[138.43,36.34],zoom:11.05}),300);
+}
+map.on("load", setup);
+map.on("styledata", setup); // タイマー凍結環境（バックグラウンドタブ等）でも確実に起動
+setup(); // 即時開始（style未準備なら自動リトライ）
+function ageBar(i){
+  const t=i.a0+i.a15+i.a65; if(!t) return "";
+  const p=v=>Math.round(v/t*1000)/10;
+  return `<div style="margin:4px 0 10px">
+    <div style="display:flex;height:16px;border-radius:6px;overflow:hidden;font-size:.6rem;color:#fff;text-align:center;line-height:16px">
+      <div style="width:${p(i.a0)}%;background:#e8b64a" title="0-14歳">${p(i.a0)>=7?p(i.a0)+"%":""}</div>
+      <div style="width:${p(i.a15)}%;background:#13897b">${p(i.a15)}%</div>
+      <div style="width:${p(i.a65)}%;background:#50808e">${p(i.a65)}%</div>
+    </div>
+    <div style="font-size:.62rem;color:#67736e;margin-top:2px">
+      <span style="color:#e8b64a">■</span>0-14歳 <span style="color:#13897b">■</span>15-64歳 <span style="color:#50808e">■</span>65歳以上（年齢不詳を除く構成比）
+    </div></div>`;
+}
+function showCard(chiku, prop){
+  const i=INFO[chiku]; if(!i) return;
+  map.setFilter("hl",["==","chiku",chiku]);
+  let extra = prop ? `<p class="ku">クリック地点の小地域: <b>${prop.name}</b>（人口 ${Number(prop.jinko).toLocaleString()}・世帯 ${Number(prop.setai).toLocaleString()}${prop.kourei!=null?`・高齢化率 ${prop.kourei}%`:""}）${prop.unsure==="true"||prop.unsure===true?"<br>⚠️ この小地域の地区対応は未確認です":""}</p>`:"";
+  document.getElementById("card").innerHTML=`
+    <h2><span class="chip" style="background:${i.color}"></span>${chiku}</h2>
+    ${i.vision?`<div style="background:#e7f1ea;border-radius:8px;padding:8px 12px;margin:6px 0;font-size:.83rem;line-height:1.6"><b style="color:#0b5d54">地域の将来像:</b> ${i.vision}</div>`:""}
+    <p class="desc">${i.desc}</p>
+    <div class="stats">
+      <div class="stat"><b>${i.jinko.toLocaleString()}</b><small>人口（2020国勢調査）</small></div>
+      <div class="stat"><b>${i.setai.toLocaleString()}</b><small>世帯</small></div>
+      ${i.kourei?`<div class="stat"><b>${i.kourei}%</b><small>高齢化率（65歳以上）</small></div>`:""}
+    </div>
+    ${i.kourei?ageBar(i):""}
+    <p class="ku"><b>行政区（${i.ku.split("・").length}区）:</b> ${i.ku}</p>
+    ${i.issue?`<p class="desc" style="font-size:.8rem;color:#67736e"><b style="color:#b4540a">住民の声・まちの論点:</b> ${i.issue}</p>`:""}
+    <p style="font-size:.66rem;color:#8a958f;margin:6px 0 0">将来像・課題の出典: 小諸市都市計画マスタープラン 地域別構想（平成28年改定）</p>
+    ${extra}`;
+}
+</script>
+</body>
+</html>
