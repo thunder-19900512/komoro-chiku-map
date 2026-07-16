@@ -46,14 +46,21 @@
         <option value="jinko">人口（小地域別）</option>
         <option value="kourei">高齢化率（小地域別）</option>
       </select>
+      　地図:
+      <select id="basemap" style="font-size:.8rem;padding:2px 4px">
+        <option value="gsi">淡色地図</option>
+        <option value="photo">航空写真</option>
+      </select>
     </label>
+    <div style="font-size:.7rem;color:var(--sub);margin:-2px 0 8px">💡 ダブルクリックで地区にズーム／ズームすると町名が出ます／📍ボタンで現在地</div>
     <div class="legend" id="legend"></div>
     <div id="card"><p class="desc">👈 まずはどこかの地区をタップ。</p></div>
     <div class="note">
-      出典: 境界・人口・世帯 = 総務省統計局「令和2年国勢調査 小地域境界データ」（e-Stat）／
-      年齢構成 = 同「小地域集計 第3表 男女，年齢（5歳階級）別人口」（総数・再掲3区分）／
-      地区の区分 = 小諸市「行政区マップ」（平成26年）・「各地区の紹介」を基にした<b>おおよその対応</b>です。
-      正確な区界を示すものではありません。／ 地図: 地理院タイル
+      出典: 境界・人口・世帯 = 総務省統計局「令和2年国勢調査 小地域境界データ」（<a href="https://www.e-stat.go.jp/gis" target="_blank" rel="noopener">e-Stat</a>）／
+      年齢構成 = 同「<a href="https://www.e-stat.go.jp/stat-search/files?page=1&cycle=0&toukei=00200521&tstat=000001136464&tclass1=000001136472&tclass2=000001159893&layout=datalist" target="_blank" rel="noopener">小地域集計 第3表 男女，年齢（5歳階級）別人口</a>」（総数・再掲3区分）／
+      将来像・住民の声 = 小諸市「<a href="https://www.city.komoro.lg.jp/soshikikarasagasu/kensetsusuidoubu/toshikeikakuka/3/1/2/1565.html" target="_blank" rel="noopener">都市計画マスタープラン 地域別構想（平成28年改定）</a>」／
+      地区の区分 = 小諸市「<a href="https://www.city.komoro.lg.jp/material/files/group/17/kuzakaizu.pdf" target="_blank" rel="noopener">行政区マップ</a>」（平成26年）・「<a href="https://www.city.komoro.lg.jp/official/shisei_machizukuri/shinogaiyo/kakuchikunoshokai/index.html" target="_blank" rel="noopener">各地区の紹介</a>」を基にした<b>おおよその対応</b>です。
+      正確な区界を示すものではありません。／ 地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>
       <br>作成: 山田ゆうじ（小諸市与良町）
     </div>
   </div>
@@ -61,13 +68,35 @@
 <script>
 const map = new maplibregl.Map({
   container:"map",
-  style:{version:8,sources:{gsi:{type:"raster",
-    tiles:["https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png"],
-    tileSize:256,attribution:"地理院タイル"}},
-    layers:[{id:"gsi",type:"raster",source:"gsi"}]},
-  center:[138.43,36.34],zoom:11
+  style:{version:8,
+    glyphs:"https://glyphs.geolonia.com/{fontstack}/{range}.pbf",
+    sources:{
+      gsi:{type:"raster",tiles:["https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png"],
+        tileSize:256,maxzoom:18,attribution:"地理院タイル"},
+      photo:{type:"raster",tiles:["https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg"],
+        tileSize:256,maxzoom:18,attribution:"地理院タイル（全国最新写真）"}},
+    layers:[{id:"gsi",type:"raster",source:"gsi"},
+            {id:"photo",type:"raster",source:"photo",layout:{visibility:"none"}}]},
+  center:[138.43,36.34],zoom:11,maxZoom:18
 });
-let INFO={}, _setupDone=false;
+map.addControl(new maplibregl.NavigationControl({showCompass:false}));
+map.addControl(new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true})); // 現在地表示（実地で便利）
+map.doubleClickZoom.disable(); // ダブルクリックは「地区ズーム」に割当
+let INFO={}, GJDATA=null, _setupDone=false;
+const SRC={
+  mp:"https://www.city.komoro.lg.jp/soshikikarasagasu/kensetsusuidoubu/toshikeikakuka/3/1/2/1565.html",
+  estat_kyokai:"https://www.e-stat.go.jp/gis",
+  estat_age:"https://www.e-stat.go.jp/stat-search/files?page=1&cycle=0&toukei=00200521&tstat=000001136464&tclass1=000001136472&tclass2=000001159893&layout=datalist",
+  kuzakaizu:"https://www.city.komoro.lg.jp/material/files/group/17/kuzakaizu.pdf",
+  chiku_shokai:"https://www.city.komoro.lg.jp/official/shisei_machizukuri/shinogaiyo/kakuchikunoshokai/index.html"
+};
+function zoomToChiku(c){ // 地区の全ポリゴンにフィット
+  if(!GJDATA) return;
+  const b=new maplibregl.LngLatBounds();
+  const walk=x=>{ if(typeof x[0]==="number") b.extend(x); else x.forEach(walk); };
+  GJDATA.features.filter(f=>f.properties.chiku===c).forEach(f=>walk(f.geometry.coordinates));
+  if(!b.isEmpty()) map.fitBounds(b,{padding:40,maxZoom:14.5});
+}
 new ResizeObserver(()=>map.resize()).observe(document.getElementById("map"));
 async function setup(){
   if(_setupDone) return;
@@ -82,14 +111,21 @@ async function setup(){
     "line-color":"#ffffff","line-width":0.8}});
   if(!map.getLayer("hl")) map.addLayer({id:"hl",type:"line",source:"chiku",paint:{
     "line-color":"#0b5d54","line-width":2.5},filter:["==","chiku","__none__"]});
+  // 町丁・字名ラベル（ズームすると表示。おおよそ区に対応）
+  if(!map.getLayer("labels")) map.addLayer({id:"labels",type:"symbol",source:"chiku",minzoom:12.5,
+    layout:{"text-field":["get","name"],"text-size":11,"text-font":["Noto Sans Regular"]},
+    paint:{"text-color":"#1f2a24","text-halo-color":"#ffffff","text-halo-width":1.6}});
+  GJDATA = gj;
   _setupDone=true; // ここまで例外なく来たら完了（途中で失敗した場合はstyledata/loadで再試行される）
   // 凡例
   const lg=document.getElementById("legend"); lg.innerHTML="";
   Object.entries(INFO).sort((a,b)=>b[1].jinko-a[1].jinko).forEach(([c,i])=>{
     const s=document.createElement("span");s.textContent=c;s.style.background=i.color;
-    s.onclick=()=>showCard(c);lg.appendChild(s);
+    s.onclick=()=>{showCard(c);zoomToChiku(c);};lg.appendChild(s);
   });
-  map.on("click","fill",e=>showCard(e.features[0].properties.chiku,e.features[0].properties));
+  map.on("click","fill",e=>showCard(e.features[0].properties.chiku,e.features[0].properties,e.lngLat));
+  map.on("dblclick","fill",e=>{ // ダブルクリック=その地区全体へズーム
+    const c=e.features[0].properties.chiku; showCard(c); zoomToChiku(c);});
   map.on("mouseenter","fill",()=>map.getCanvas().style.cursor="pointer");
   map.on("mouseleave","fill",()=>map.getCanvas().style.cursor="");
   // 塗り分け切替（地区色/人口/高齢化率）
@@ -105,6 +141,13 @@ async function setup(){
     }else{
       map.setPaintProperty("fill","fill-color",["get","color"]);
     }
+  };
+  // ベースマップ切替（航空写真時は塗りを薄くして家屋を見やすく）
+  document.getElementById("basemap").onchange=ev=>{
+    const photo = ev.target.value==="photo";
+    map.setLayoutProperty("photo","visibility",photo?"visible":"none");
+    map.setPaintProperty("fill","fill-opacity",photo?0.12:0.42);
+    map.setPaintProperty("labels","text-halo-width",photo?2.2:1.6);
   };
   // データ追加後に一度視点を入れ直して確実に再描画させる（環境によりloadが遅延するため）
   setTimeout(()=>map.jumpTo({center:[138.43,36.34],zoom:11.05}),300);
@@ -125,10 +168,11 @@ function ageBar(i){
       <span style="color:#e8b64a">■</span>0-14歳 <span style="color:#13897b">■</span>15-64歳 <span style="color:#50808e">■</span>65歳以上（年齢不詳を除く構成比）
     </div></div>`;
 }
-function showCard(chiku, prop){
+function showCard(chiku, prop, lngLat){
   const i=INFO[chiku]; if(!i) return;
   map.setFilter("hl",["==","chiku",chiku]);
-  let extra = prop ? `<p class="ku">クリック地点の小地域: <b>${prop.name}</b>（人口 ${Number(prop.jinko).toLocaleString()}・世帯 ${Number(prop.setai).toLocaleString()}${prop.kourei!=null?`・高齢化率 ${prop.kourei}%`:""}）${prop.unsure==="true"||prop.unsure===true?"<br>⚠️ この小地域の地区対応は未確認です":""}</p>`:"";
+  const gmap = lngLat ? `　<a href="https://www.google.com/maps?q=${lngLat.lat.toFixed(6)},${lngLat.lng.toFixed(6)}" target="_blank" rel="noopener" style="color:#13897b;font-weight:600">この地点をGoogleマップで開く ↗</a>`:"";
+  let extra = prop ? `<p class="ku">クリック地点の小地域: <b>${prop.name}</b>（人口 ${Number(prop.jinko).toLocaleString()}・世帯 ${Number(prop.setai).toLocaleString()}${prop.kourei!=null?`・高齢化率 ${prop.kourei}%`:""}）${prop.unsure==="true"||prop.unsure===true?"<br>⚠️ この小地域の地区対応は未確認です":""}${gmap}</p>`:"";
   document.getElementById("card").innerHTML=`
     <h2><span class="chip" style="background:${i.color}"></span>${chiku}</h2>
     ${i.vision?`<div style="background:#e7f1ea;border-radius:8px;padding:8px 12px;margin:6px 0;font-size:.83rem;line-height:1.6"><b style="color:#0b5d54">地域の将来像:</b> ${i.vision}</div>`:""}
@@ -141,7 +185,11 @@ function showCard(chiku, prop){
     ${i.kourei?ageBar(i):""}
     <p class="ku"><b>行政区（${i.ku.split("・").length}区）:</b> ${i.ku}</p>
     ${i.issue?`<p class="desc" style="font-size:.8rem;color:#67736e"><b style="color:#b4540a">住民の声・まちの論点:</b> ${i.issue}</p>`:""}
-    <p style="font-size:.66rem;color:#8a958f;margin:6px 0 0">将来像・課題の出典: 小諸市都市計画マスタープラン 地域別構想（平成28年改定）</p>
+    <p style="font-size:.68rem;color:#8a958f;margin:6px 0 0;line-height:1.7">出典:
+      将来像・住民の声 = <a href="${SRC.mp}" target="_blank" rel="noopener">都市計画マスタープラン 地域別構想（H28）↗</a> ／
+      人口・世帯 = <a href="${SRC.estat_kyokai}" target="_blank" rel="noopener">e-Stat 2020国勢調査 小地域境界 ↗</a> ／
+      年齢構成 = <a href="${SRC.estat_age}" target="_blank" rel="noopener">同 小地域集計 第3表（長野県）↗</a> ／
+      行政区 = <a href="${SRC.kuzakaizu}" target="_blank" rel="noopener">小諸市行政区マップ ↗</a>・<a href="${SRC.chiku_shokai}" target="_blank" rel="noopener">各地区の紹介 ↗</a></p>
     ${extra}`;
 }
 </script>
