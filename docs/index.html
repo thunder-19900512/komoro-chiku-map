@@ -103,8 +103,9 @@ function zoomToChiku(c){ // 地区の全ポリゴンにフィット
 }
 new ResizeObserver(()=>map.resize()).observe(document.getElementById("map"));
 async function setup(){
-  if(_setupDone) return;
+  if(_setupDone || window._settingUp) return;
   if(!map.isStyleLoaded()){ setTimeout(setup, 250); return; } // styleが準備できるまで待つ
+  window._settingUp = true; setTimeout(()=>window._settingUp=false, 5000); // 並行実行ガード（5秒で自動解除）
   map.resize();
   const gj = await (await fetch("data.geojson")).json();
   INFO = await (await fetch("chiku_info.json")).json();
