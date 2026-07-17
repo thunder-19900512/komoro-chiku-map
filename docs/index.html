@@ -53,6 +53,8 @@
       </select>
     </label>
     <div style="font-size:.7rem;color:var(--sub);margin:-2px 0 8px">💡 ダブルクリックで地区にズーム／ズームすると町名が出ます／📍ボタンで現在地</div>
+    <label class="tgl"><input type="checkbox" id="posters"> ポスター掲示場を表示（151か所）</label>
+    <div id="posternote" style="display:none;font-size:.68rem;color:var(--sub);background:#fbf6e0;border-radius:6px;padding:6px 9px;margin:0 0 8px">令和7年7月参院選時点の掲示場（選挙管理委員会の公示情報に基づく）。<b>次回以降の選挙では場所・数が変わる場合があります。</b>ピンをクリックすると番号・住所が出ます。</div>
     <div class="legend" id="legend"></div>
     <div id="card"><p class="desc">👈 まずはどこかの地区をタップ。</p></div>
     <div class="note">
@@ -60,7 +62,9 @@
       年齢構成 = 同「<a href="https://www.e-stat.go.jp/stat-search/files?page=1&cycle=0&toukei=00200521&tstat=000001136464&tclass1=000001136472&tclass2=000001159893&layout=datalist" target="_blank" rel="noopener">小地域集計 第3表 男女，年齢（5歳階級）別人口</a>」（総数・再掲3区分）／
       将来像・住民の声 = 小諸市「<a href="https://www.city.komoro.lg.jp/soshikikarasagasu/kensetsusuidoubu/toshikeikakuka/3/1/2/1565.html" target="_blank" rel="noopener">都市計画マスタープラン 地域別構想（平成28年改定）</a>」／
       地区の区分 = 小諸市「<a href="https://www.city.komoro.lg.jp/material/files/group/17/kuzakaizu.pdf" target="_blank" rel="noopener">行政区マップ</a>」（平成26年）・「<a href="https://www.city.komoro.lg.jp/official/shisei_machizukuri/shinogaiyo/kakuchikunoshokai/index.html" target="_blank" rel="noopener">各地区の紹介</a>」を基にした<b>おおよその対応</b>です。
-      正確な区界を示すものではありません。／ 地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>
+      正確な区界を示すものではありません。／
+      ポスター掲示場 = 令和7年7月参院選時の選挙管理委員会公示情報（次回以降の選挙では変わる場合があります）／
+      地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>
       <br>作成: 山田ゆうじ（小諸市与良町）
     </div>
   </div>
@@ -142,6 +146,33 @@ async function setup(){
       map.setPaintProperty("fill","fill-color",["get","color"]);
     }
   };
+  // ポスター掲示場レイヤ（R7参院選・初期非表示）
+  try{
+    const pj = await (await fetch("posters.geojson")).json();
+    if(!map.getSource("posters")) map.addSource("posters",{type:"geojson",data:pj});
+    if(!map.getLayer("poster-pts")) map.addLayer({id:"poster-pts",type:"circle",source:"posters",
+      layout:{visibility:"none"},
+      paint:{"circle-radius":["interpolate",["linear"],["zoom"],10,3,14,7],
+             "circle-color":"#d1604d","circle-stroke-color":"#ffffff","circle-stroke-width":1.5}});
+    if(!map.getLayer("poster-no")) map.addLayer({id:"poster-no",type:"symbol",source:"posters",minzoom:13.5,
+      layout:{visibility:"none","text-field":["get","no"],"text-size":10,
+              "text-font":["Noto Sans Regular"],"text-offset":[0,1.1]},
+      paint:{"text-color":"#8e2f23","text-halo-color":"#ffffff","text-halo-width":1.4}});
+    map.on("click","poster-pts",e=>{
+      const p=e.features[0].properties, ll=e.lngLat;
+      new maplibregl.Popup({offset:8}).setLngLat(e.features[0].geometry.coordinates)
+        .setHTML(`<div style="font-size:.85rem;line-height:1.6"><b>掲示場 ${p.no}</b><br>${p.addr}<br>`+
+          `<a href="https://www.google.com/maps?q=${ll.lat.toFixed(6)},${ll.lng.toFixed(6)}" target="_blank" rel="noopener">Googleマップで開く ↗</a></div>`)
+        .addTo(map);
+    });
+    map.on("mouseenter","poster-pts",()=>map.getCanvas().style.cursor="pointer");
+    document.getElementById("posters").onchange=ev=>{
+      const v=ev.target.checked?"visible":"none";
+      map.setLayoutProperty("poster-pts","visibility",v);
+      map.setLayoutProperty("poster-no","visibility",v);
+      document.getElementById("posternote").style.display=ev.target.checked?"block":"none";
+    };
+  }catch(e){/* posters.geojsonが無い場合はスキップ */}
   // ベースマップ切替（航空写真時は塗りを薄くして家屋を見やすく）
   document.getElementById("basemap").onchange=ev=>{
     const photo = ev.target.value==="photo";

@@ -31,3 +31,8 @@ cd docs && python3 -m http.server 8765   # ローカル確認 http://localhost:8
 - [ ] 名義・連絡先の最終判断（現状「作成: 山田ゆうじ」のみ）
 - [ ] 公開リポジトリ作成（このフォルダをそのままpush可。data/estat_shapeは再配布条件=出典明記を確認済みだが最終確認）
 - ⚠️ 更新確認時はブラウザのキャッシュに注意（Cmd+Shift+R でスーパーリロード）
+
+## ポスター掲示場レイヤ（2026-07-17追加）
+- 元データ: Drive `02_Research_and_Data/02_Election_Stats/2025_選管公示_R7参院選ポスター掲示場_小諸市.csv`（151か所・R7参院選時点）
+- ⚠️ **公開版（posters.geojson）は number/address/座標のみ。name列（個人宅名を含む）は絶対に公開しない**（build.pyが自動で除外）
+- 市議選の掲示場一覧が出たら `data/posters_r7sangiin.csv` を差し替え → build.py → push

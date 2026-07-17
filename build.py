@@ -182,6 +182,22 @@ with open(os.path.join(DOCS,"chiku_info.json"),"w") as f:
 with open(os.path.join(BASE,"data/対応表_要確認リスト.csv"),"w") as f:
     w = csv.writer(f); w.writerow(["小地域名","仮の地区","人口"]); w.writerows(review)
 
+# ---- ポスター掲示場（R7参院選・選管公示ベース） --------------------------
+# ⚠️ 公開版には number/address/座標のみ出力。name列（個人宅名を含む）は公開しない。
+pcsv = os.path.join(BASE, "data/posters_r7sangiin.csv")
+if os.path.exists(pcsv):
+    pfeats = []
+    with open(pcsv, encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            try: lat, lng = float(r["lat"]), float(r["long"])
+            except: continue
+            pfeats.append({"type":"Feature",
+                "geometry":{"type":"Point","coordinates":[lng, lat]},
+                "properties":{"no":r["number"].strip(),"addr":r["address"].strip()}})
+    with open(os.path.join(DOCS,"posters.geojson"),"w") as f:
+        json.dump({"type":"FeatureCollection","features":pfeats}, f, ensure_ascii=False)
+    print(f"ポスター掲示場: {len(pfeats)}件 → docs/posters.geojson（name列は非公開）")
+
 print(f"OK: {len(feats)}小地域 → docs/data.geojson（年齢データ結合: {age_hit}/{len(feats)}）")
 for c,a in sorted(agg.items(), key=lambda x:-x[1]['jinko']):
     k = f" 高齢化率{a.get('kourei','?')}% 年少{a.get('nensyo','?')}%" if a.get('kourei') else ""
