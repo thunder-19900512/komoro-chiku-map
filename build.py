@@ -207,6 +207,69 @@ if os.path.exists(JINRYU_CSV):
         json.dump({"type":"FeatureCollection","features":jfeats}, f, ensure_ascii=False)
     print(f"人流: {len(jfeats)}メッシュ → docs/jinryu.geojson（2021年12月・平日/休日×昼/深夜）")
 
+# ---- 250mメッシュ居住人口（令和2年国勢調査 4分の1地域メッシュ T001142） ----
+# 出典: e-Stat 統計GIS（政府標準利用規約）。秘匿処理行(HTKSYORI=2)は総数のみ有効
+M250 = os.path.join(BASE, "data/estat_mesh250/tblT001142Q5438.txt")
+if os.path.exists(M250):
+    def mesh250_poly(code):  # 10桁: 8桁(1km)+500m区画+250m区画（1=SW,2=SE,3=NW,4=NE）
+        ab, cd = int(code[0:2]), int(code[2:4])
+        e, f_, g, h = int(code[4]), int(code[5]), int(code[6]), int(code[7])
+        lat0 = ab / 1.5 + e * (1/12) + g * (1/120)
+        lon0 = 100 + cd + f_ * (1/8) + h * (1/80)
+        la, lo = 1/120, 1/80
+        for q in (int(code[8]), int(code[9])):
+            la /= 2; lo /= 2
+            lat0 += ((q - 1) // 2) * la
+            lon0 += ((q - 1) % 2) * lo
+        return [[[lon0, lat0], [lon0+lo, lat0], [lon0+lo, lat0+la], [lon0, lat0+la], [lon0, lat0]]]
+    # 市域判定の準備（小地域ポリゴン＋bbox）
+    def _pip(lng, lat, ring):
+        inside = False; j = len(ring) - 1
+        for i in range(len(ring)):
+            xi, yi = ring[i][0], ring[i][1]; xj, yj = ring[j][0], ring[j][1]
+            if (yi > lat) != (yj > lat) and lng < (xj - xi) * (lat - yi) / (yj - yi) + xi:
+                inside = not inside
+            j = i
+        return inside
+    _polys = []
+    for f in feats:
+        g = f["geometry"]
+        for poly in (g["coordinates"] if g["type"] == "MultiPolygon" else [g["coordinates"]]):
+            ring = poly[0]
+            xs = [p[0] for p in ring]; ys = [p[1] for p in ring]
+            _polys.append((min(xs), min(ys), max(xs), max(ys), ring))
+    def in_city(lng, lat):
+        for x0, y0, x1, y1, ring in _polys:
+            if x0 <= lng <= x1 and y0 <= lat <= y1 and _pip(lng, lat, ring):
+                return True
+        return False
+    import io
+    m250_feats = []
+    with io.open(M250, encoding="cp932") as f:
+        next(f); next(f)  # ヘッダ2行
+        for line in f:
+            c = line.rstrip("\n").split(",")
+            code = c[0]
+            if len(code) != 10: continue
+            def num(v):
+                try: return int(v)
+                except: return None
+            pop = num(c[4])
+            if not pop: continue
+            poly = mesh250_poly(code)
+            clng = (poly[0][0][0] + poly[0][2][0]) / 2
+            clat = (poly[0][0][1] + poly[0][2][1]) / 2
+            # bbox粗フィルタ→市域pip（1kmメッシュコード上位でなく座標で判定）
+            if not (138.34 <= clng <= 138.58 and 36.24 <= clat <= 36.46): continue
+            if not in_city(clng, clat): continue
+            a0, a65 = num(c[7]), num(c[22])
+            m250_feats.append({"type":"Feature","geometry":{"type":"Polygon","coordinates":poly},
+                "properties":{"pop":pop,"a0":a0,"a65":a65}})
+    with open(os.path.join(DOCS,"mesh250.geojson"),"w") as f:
+        json.dump({"type":"FeatureCollection","features":m250_feats}, f, ensure_ascii=False)
+    tot = sum(f["properties"]["pop"] for f in m250_feats)
+    print(f"250mメッシュ: {len(m250_feats)}件（市域内・人口計{tot:,}） → docs/mesh250.geojson")
+
 # ---- ポスター掲示場（R7参院選・選管公示ベース） --------------------------
 # ⚠️ 公開版には number/address/座標のみ出力。name列（個人宅名を含む）は公開しない。
 pcsv = os.path.join(BASE, "data/posters_r7sangiin.csv")

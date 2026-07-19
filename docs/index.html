@@ -49,6 +49,7 @@
         <option value="jr_wn">人流・平日の深夜</option>
         <option value="jr_hd">人流・休日の昼</option>
         <option value="jr_hn">人流・休日の深夜</option>
+        <option value="m250">居住人口（250mメッシュ）</option>
       </select>
       　地図:
       <select id="basemap" style="font-size:.8rem;padding:2px 4px">
@@ -58,6 +59,7 @@
     </label>
     <div style="font-size:.7rem;color:var(--sub);margin:-2px 0 8px">💡 ダブルクリックで地区にズーム／ズームすると町名が出ます／📍ボタンで現在地</div>
     <div id="jinryunote" style="display:none;font-size:.68rem;color:var(--sub);background:#e6eef5;border-radius:6px;padding:6px 9px;margin:0 0 8px">1kmメッシュあたりの滞在人口（<b>2021年12月</b>・携帯位置情報ベースの推計）。昼=11〜15時台、深夜=1〜5時台の平均。メッシュをクリックすると4パターンの値が出ます。</div>
+    <div id="m250note" style="display:none;font-size:.68rem;color:var(--sub);background:#efeaf7;border-radius:6px;padding:6px 9px;margin:0 0 8px">250m四方あたりの<b>住んでいる人の数</b>（2020年国勢調査）。メッシュをクリックすると人口・年齢の内訳が出ます。</div>
     <label class="tgl"><input type="checkbox" id="posters"> ポスター掲示場を表示（151か所）</label>
     <div id="posternote" style="display:none;font-size:.68rem;color:var(--sub);background:#fbf6e0;border-radius:6px;padding:6px 9px;margin:0 0 8px">令和7年7月参院選時点の掲示場（選挙管理委員会の公示情報に基づく）。<b>次回以降の選挙では場所・数が変わる場合があります。</b>ピンをクリックすると番号・住所が出ます。</div>
     <div class="legend" id="legend"></div>
@@ -70,6 +72,7 @@
       正確な区界を示すものではありません。／
       ポスター掲示場 = 令和7年7月参院選時の選挙管理委員会公示情報（次回以降の選挙では変わる場合があります）／
       人流 = 国土交通省「<a href="https://www.geospatial.jp/ckan/dataset/mlit-1km-fromto" target="_blank" rel="noopener">全国の人流オープンデータ（1kmメッシュ）</a>」2021年12月・携帯位置情報ベースの推計値（G空間情報センター）／
+      250mメッシュ居住人口 = 総務省統計局「令和2年国勢調査 4分の1地域メッシュ（<a href="https://www.e-stat.go.jp/gis" target="_blank" rel="noopener">e-Stat 統計GIS</a>）」／
       地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>
       <br>作成: 山田ゆうじ（小諸市与良町）
     </div>
@@ -139,11 +142,13 @@ async function setup(){
     const c=e.features[0].properties.chiku; showCard(c); zoomToChiku(c);});
   map.on("mouseenter","fill",()=>map.getCanvas().style.cursor="pointer");
   map.on("mouseleave","fill",()=>map.getCanvas().style.cursor="");
-  // 塗り分け切替（地区色/人口/高齢化率/人流4種）
+  // 塗り分け切替（地区色/人口/高齢化率/人流4種/250m居住人口）
   document.getElementById("paintmode").onchange=ev=>{
-    const m=ev.target.value, isJr=m.startsWith("jr_");
+    const m=ev.target.value, isJr=m.startsWith("jr_"), isM250=(m==="m250");
     document.getElementById("jinryunote").style.display=isJr?"block":"none";
+    document.getElementById("m250note").style.display=isM250?"block":"none";
     const photo=document.getElementById("basemap").value==="photo";
+    if(map.getLayer("m250-fill")) map.setLayoutProperty("m250-fill","visibility",isM250?"visible":"none");
     if(map.getLayer("jinryu-fill")){
       map.setLayoutProperty("jinryu-fill","visibility",isJr?"visible":"none");
       if(isJr){
@@ -154,7 +159,7 @@ async function setup(){
         map.setPaintProperty("jinryu-fill","fill-opacity",0.72);
       }
     }
-    if(isJr){
+    if(isJr||isM250){
       map.setPaintProperty("fill","fill-opacity",0.05);
     }else{
       map.setPaintProperty("fill","fill-opacity",photo?0.12:0.42);
@@ -187,6 +192,25 @@ async function setup(){
           `休日昼 <b>${v(p.hd)}</b>　休日深夜 <b>${v(p.hn)}</b></div>`).addTo(map);
     });
   }catch(e){/* jinryu.geojsonが無ければスキップ */}
+  // 250mメッシュ居住人口レイヤ（2020国勢調査・初期非表示）
+  try{
+    const m2 = await (await fetch("mesh250.geojson")).json();
+    if(!map.getSource("mesh250")) map.addSource("mesh250",{type:"geojson",data:m2});
+    if(!map.getLayer("m250-fill")) map.addLayer({id:"m250-fill",type:"fill",source:"mesh250",
+      layout:{visibility:"none"},
+      paint:{"fill-color":["interpolate",["linear"],["get","pop"],
+              1,"#f7f5fb",20,"#ded3ef",60,"#b79dda",150,"#8a63bd",300,"#5b3a94",600,"#37205e"],
+             "fill-opacity":0.72,"fill-outline-color":"#ffffff"}});
+    map.on("click","m250-fill",e=>{
+      if(document.getElementById("paintmode").value!=="m250") return;
+      const p=e.features[0].properties;
+      const v=x=>(x==null||x==="null")?"—":Number(x).toLocaleString();
+      const kr=(p.a65!=null&&p.pop)?`（高齢化率 ${Math.round(p.a65/p.pop*1000)/10}%）`:"";
+      new maplibregl.Popup({offset:6}).setLngLat(e.lngLat)
+        .setHTML(`<div style="font-size:.82rem;line-height:1.7"><b>この250m四方の居住人口</b>（2020国勢調査）<br>`+
+          `人口 <b>${v(p.pop)}</b>人　うち0-14歳 ${v(p.a0)}・65歳以上 ${v(p.a65)}${kr}</div>`).addTo(map);
+    });
+  }catch(e){/* mesh250.geojsonが無ければスキップ */}
   // ポスター掲示場レイヤ（R7参院選・初期非表示）
   try{
     const pj = await (await fetch("posters.geojson")).json();
@@ -217,7 +241,8 @@ async function setup(){
   // ベースマップ切替（航空写真時は塗りを薄くして家屋を見やすく）
   document.getElementById("basemap").onchange=ev=>{
     const photo = ev.target.value==="photo";
-    const isJr = String(document.getElementById("paintmode").value).startsWith("jr_");
+    const pm = String(document.getElementById("paintmode").value);
+    const isJr = pm.startsWith("jr_") || pm==="m250";
     map.setLayoutProperty("photo","visibility",photo?"visible":"none");
     map.setPaintProperty("fill","fill-opacity",isJr?0.05:(photo?0.12:0.42));
     map.setPaintProperty("labels","text-halo-width",photo?2.2:1.6);
