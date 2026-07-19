@@ -45,6 +45,10 @@
         <option value="chiku">地区の色</option>
         <option value="jinko">人口（小地域別）</option>
         <option value="kourei">高齢化率（小地域別）</option>
+        <option value="jr_wd">人流・平日の昼</option>
+        <option value="jr_wn">人流・平日の深夜</option>
+        <option value="jr_hd">人流・休日の昼</option>
+        <option value="jr_hn">人流・休日の深夜</option>
       </select>
       　地図:
       <select id="basemap" style="font-size:.8rem;padding:2px 4px">
@@ -53,6 +57,7 @@
       </select>
     </label>
     <div style="font-size:.7rem;color:var(--sub);margin:-2px 0 8px">💡 ダブルクリックで地区にズーム／ズームすると町名が出ます／📍ボタンで現在地</div>
+    <div id="jinryunote" style="display:none;font-size:.68rem;color:var(--sub);background:#e6eef5;border-radius:6px;padding:6px 9px;margin:0 0 8px">1kmメッシュあたりの滞在人口（<b>2021年12月</b>・携帯位置情報ベースの推計）。昼=11〜15時台、深夜=1〜5時台の平均。メッシュをクリックすると4パターンの値が出ます。</div>
     <label class="tgl"><input type="checkbox" id="posters"> ポスター掲示場を表示（151か所）</label>
     <div id="posternote" style="display:none;font-size:.68rem;color:var(--sub);background:#fbf6e0;border-radius:6px;padding:6px 9px;margin:0 0 8px">令和7年7月参院選時点の掲示場（選挙管理委員会の公示情報に基づく）。<b>次回以降の選挙では場所・数が変わる場合があります。</b>ピンをクリックすると番号・住所が出ます。</div>
     <div class="legend" id="legend"></div>
@@ -64,6 +69,7 @@
       地区の区分 = 小諸市「<a href="https://www.city.komoro.lg.jp/material/files/group/17/kuzakaizu.pdf" target="_blank" rel="noopener">行政区マップ</a>」（平成26年）・「<a href="https://www.city.komoro.lg.jp/official/shisei_machizukuri/shinogaiyo/kakuchikunoshokai/index.html" target="_blank" rel="noopener">各地区の紹介</a>」を基にした<b>おおよその対応</b>です。
       正確な区界を示すものではありません。／
       ポスター掲示場 = 令和7年7月参院選時の選挙管理委員会公示情報（次回以降の選挙では変わる場合があります）／
+      人流 = 国土交通省「<a href="https://www.geospatial.jp/ckan/dataset/mlit-1km-fromto" target="_blank" rel="noopener">全国の人流オープンデータ（1kmメッシュ）</a>」2021年12月・携帯位置情報ベースの推計値（G空間情報センター）／
       地図: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>
       <br>作成: 山田ゆうじ（小諸市与良町）
     </div>
@@ -133,20 +139,54 @@ async function setup(){
     const c=e.features[0].properties.chiku; showCard(c); zoomToChiku(c);});
   map.on("mouseenter","fill",()=>map.getCanvas().style.cursor="pointer");
   map.on("mouseleave","fill",()=>map.getCanvas().style.cursor="");
-  // 塗り分け切替（地区色/人口/高齢化率）
+  // 塗り分け切替（地区色/人口/高齢化率/人流4種）
   document.getElementById("paintmode").onchange=ev=>{
-    const m=ev.target.value;
-    if(m==="jinko"){
-      map.setPaintProperty("fill","fill-color",
-        ["interpolate",["linear"],["get","jinko"],0,"#f2f7f5",100,"#c9e6de",400,"#7fc4b4",1000,"#2f9483",2500,"#0b5d54"]);
-    }else if(m==="kourei"){
-      map.setPaintProperty("fill","fill-color",
-        ["interpolate",["linear"],["coalesce",["get","kourei"],0],
-          15,"#f5f2ec",25,"#f5e6a3",35,"#eba95c",45,"#d1604d",60,"#8e2f23"]);
+    const m=ev.target.value, isJr=m.startsWith("jr_");
+    document.getElementById("jinryunote").style.display=isJr?"block":"none";
+    const photo=document.getElementById("basemap").value==="photo";
+    if(map.getLayer("jinryu-fill")){
+      map.setLayoutProperty("jinryu-fill","visibility",isJr?"visible":"none");
+      if(isJr){
+        const attr={jr_wd:"wd",jr_wn:"wn",jr_hd:"hd",jr_hn:"hn"}[m];
+        map.setPaintProperty("jinryu-fill","fill-color",
+          ["interpolate",["linear"],["coalesce",["get",attr],0],
+            0,"#f4f8fb",50,"#d3e5f2",200,"#9cc7e4",600,"#5b98ce",1500,"#2b5f86",4300,"#16324a"]);
+        map.setPaintProperty("jinryu-fill","fill-opacity",0.72);
+      }
+    }
+    if(isJr){
+      map.setPaintProperty("fill","fill-opacity",0.05);
     }else{
-      map.setPaintProperty("fill","fill-color",["get","color"]);
+      map.setPaintProperty("fill","fill-opacity",photo?0.12:0.42);
+      if(m==="jinko"){
+        map.setPaintProperty("fill","fill-color",
+          ["interpolate",["linear"],["get","jinko"],0,"#f2f7f5",100,"#c9e6de",400,"#7fc4b4",1000,"#2f9483",2500,"#0b5d54"]);
+      }else if(m==="kourei"){
+        map.setPaintProperty("fill","fill-color",
+          ["interpolate",["linear"],["coalesce",["get","kourei"],0],
+            15,"#f5f2ec",25,"#f5e6a3",35,"#eba95c",45,"#d1604d",60,"#8e2f23"]);
+      }else{
+        map.setPaintProperty("fill","fill-color",["get","color"]);
+      }
     }
   };
+  // 人流メッシュレイヤ（国交省 人流オープンデータ 2021-12・初期非表示）
+  try{
+    const jr = await (await fetch("jinryu.geojson")).json();
+    if(!map.getSource("jinryu")) map.addSource("jinryu",{type:"geojson",data:jr});
+    if(!map.getLayer("jinryu-fill")) map.addLayer({id:"jinryu-fill",type:"fill",source:"jinryu",
+      layout:{visibility:"none"},
+      paint:{"fill-color":"#2b5f86","fill-opacity":0.0,"fill-outline-color":"#ffffff"}});
+    map.on("click","jinryu-fill",e=>{
+      if(!String(document.getElementById("paintmode").value).startsWith("jr_")) return;
+      const p=e.features[0].properties;
+      const v=x=>(x==null||x==="null")?"—":Number(x).toLocaleString();
+      new maplibregl.Popup({offset:6}).setLngLat(e.lngLat)
+        .setHTML(`<div style="font-size:.82rem;line-height:1.7"><b>このメッシュの滞在人口</b>（2021年12月）<br>`+
+          `平日昼 <b>${v(p.wd)}</b>　平日深夜 <b>${v(p.wn)}</b><br>`+
+          `休日昼 <b>${v(p.hd)}</b>　休日深夜 <b>${v(p.hn)}</b></div>`).addTo(map);
+    });
+  }catch(e){/* jinryu.geojsonが無ければスキップ */}
   // ポスター掲示場レイヤ（R7参院選・初期非表示）
   try{
     const pj = await (await fetch("posters.geojson")).json();
@@ -177,8 +217,9 @@ async function setup(){
   // ベースマップ切替（航空写真時は塗りを薄くして家屋を見やすく）
   document.getElementById("basemap").onchange=ev=>{
     const photo = ev.target.value==="photo";
+    const isJr = String(document.getElementById("paintmode").value).startsWith("jr_");
     map.setLayoutProperty("photo","visibility",photo?"visible":"none");
-    map.setPaintProperty("fill","fill-opacity",photo?0.12:0.42);
+    map.setPaintProperty("fill","fill-opacity",isJr?0.05:(photo?0.12:0.42));
     map.setPaintProperty("labels","text-halo-width",photo?2.2:1.6);
   };
   // データ追加後に一度視点を入れ直して確実に再描画させる（環境によりloadが遅延するため）

@@ -182,6 +182,31 @@ with open(os.path.join(DOCS,"chiku_info.json"),"w") as f:
 with open(os.path.join(BASE,"data/対応表_要確認リスト.csv"),"w") as f:
     w = csv.writer(f); w.writerow(["小地域名","仮の地区","人口"]); w.writerows(review)
 
+# ---- 人流データ（国交省 全国の人流オープンデータ 1kmメッシュ 2021-12） -----
+# 出典: G空間情報センター mlit-1km-fromto（政府標準利用規約）。dayflag 0=休日/1=平日, timezone 0=昼/1=深夜
+JINRYU_CSV = os.path.join(BASE, "data/jinryu_nagano/20/2021/12/monthly_mdp_mesh1km.csv")
+if os.path.exists(JINRYU_CSV):
+    def mesh_poly(code):  # 標準地域メッシュ(3次・1km)コード8桁 → ポリゴン
+        ab, cd = int(code[0:2]), int(code[2:4])
+        e, f_, g, h = int(code[4]), int(code[5]), int(code[6]), int(code[7])
+        lat0 = ab / 1.5 + e * (1/12) + g * (1/120)
+        lon0 = 100 + cd + f_ * (1/8) + h * (1/80)
+        la, lo = 1/120, 1/80
+        return [[[lon0, lat0], [lon0+lo, lat0], [lon0+lo, lat0+la], [lon0, lat0+la], [lon0, lat0]]]
+    mesh = {}
+    with open(JINRYU_CSV) as f:
+        for r in csv.DictReader(f):
+            if r["citycode"] != "20208": continue
+            key = {"1":{"0":"wd","1":"wn"},"0":{"0":"hd","1":"hn"}}.get(r["dayflag"],{}).get(r["timezone"])
+            if not key: continue  # 全日・終日は使わない
+            mesh.setdefault(r["mesh1kmid"], {})[key] = int(r["population"])
+    jfeats = [{"type":"Feature","geometry":{"type":"Polygon","coordinates":mesh_poly(m)},
+               "properties":{"mesh":m, **{k: v.get(k) for k in ("wd","wn","hd","hn")}}}
+              for m, v in mesh.items()]
+    with open(os.path.join(DOCS,"jinryu.geojson"),"w") as f:
+        json.dump({"type":"FeatureCollection","features":jfeats}, f, ensure_ascii=False)
+    print(f"人流: {len(jfeats)}メッシュ → docs/jinryu.geojson（2021年12月・平日/休日×昼/深夜）")
+
 # ---- ポスター掲示場（R7参院選・選管公示ベース） --------------------------
 # ⚠️ 公開版には number/address/座標のみ出力。name列（個人宅名を含む）は公開しない。
 pcsv = os.path.join(BASE, "data/posters_r7sangiin.csv")
