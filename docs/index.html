@@ -12,7 +12,7 @@
   body{margin:0;font-family:-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;color:var(--ink)}
   #app{display:flex;height:100vh}
   #map{flex:1}
-  #side{width:340px;overflow-y:auto;border-left:1px solid var(--line);padding:16px 18px;background:#fff}
+  #side{width:21.25rem;max-width:55vw;overflow-y:auto;border-left:1px solid var(--line);padding:16px 18px;background:#fff}
   h1{font-size:1.05rem;margin:0 0 2px;color:var(--teal-d)}
   .sub{font-size:.74rem;color:var(--sub);margin-bottom:10px}
   .hint{font-size:.8rem;background:#eef6f3;border-radius:8px;padding:8px 10px;margin-bottom:10px}
@@ -29,8 +29,11 @@
   .ku b{color:var(--teal)}
   .desc{font-size:.85rem;line-height:1.7}
   .note{font-size:.68rem;color:var(--sub);margin-top:12px;border-top:1px dashed var(--line);padding-top:8px;line-height:1.6}
-  label.tgl{font-size:.78rem;display:flex;gap:6px;align-items:center;margin:6px 0}
-  @media(max-width:720px){#app{flex-direction:column}#map{height:55vh}#side{width:100%;flex:1}}
+  label.tgl{font-size:.78rem;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0}
+  .fs{display:flex;align-items:center;gap:4px;font-size:.72rem;color:var(--sub);margin:0 0 8px}
+  .fs button{font-size:.8rem;min-width:2.2em;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);cursor:pointer}
+  .fs button:disabled{opacity:.35;cursor:default}
+  @media(max-width:720px){#app{flex-direction:column}#map{height:55vh}#side{width:100%;max-width:none;flex:1}}
 </style>
 </head>
 <body>
@@ -39,6 +42,7 @@
   <div id="side">
     <h1>こもろ地区ガイド</h1>
     <div class="sub">小諸市の10地区を知る（たたき台版）</div>
+    <div class="fs">文字の大きさ: <button id="fsdown" aria-label="文字を小さく">A−</button><span id="fslabel">標準</span><button id="fsup" aria-label="文字を大きく">A＋</button></div>
     <div class="hint">地図の地区をクリックすると、その地区の紹介が出ます。</div>
     <label class="tgl">塗り分け:
       <select id="paintmode" style="font-size:.8rem;padding:2px 4px">
@@ -78,6 +82,21 @@
     </div>
   </div>
 </div>
+<script>
+// 文字サイズ切替（rem基準なのでルートの文字サイズを変えるとパネル・ポップアップがまとめて拡大）
+(()=>{
+  const STEPS=[{px:14,t:"小"},{px:16,t:"標準"},{px:18,t:"大"},{px:20,t:"特大"},{px:23,t:"超特大"}];
+  let i=1; try{ const v=localStorage.getItem("komoro_fs"); if(v!==null&&+v>=0&&+v<STEPS.length) i=+v; }catch(e){}
+  const dn=document.getElementById("fsdown"), up=document.getElementById("fsup"), lb=document.getElementById("fslabel");
+  const apply=()=>{
+    document.documentElement.style.fontSize=STEPS[i].px+"px";
+    lb.textContent=STEPS[i].t; dn.disabled=(i===0); up.disabled=(i===STEPS.length-1);
+    try{ localStorage.setItem("komoro_fs",String(i)); }catch(e){}
+  };
+  dn.onclick=()=>{ if(i>0){i--;apply();} }; up.onclick=()=>{ if(i<STEPS.length-1){i++;apply();} };
+  apply();
+})();
+</script>
 <script>
 const map = new maplibregl.Map({
   container:"map",
@@ -211,6 +230,17 @@ async function setup(){
           `人口 <b>${v(p.pop)}</b>人　うち0-14歳 ${v(p.a0)}・65歳以上 ${v(p.a65)}${kr}</div>`).addTo(map);
     });
   }catch(e){/* mesh250.geojsonが無ければスキップ */}
+  // 市の外周線（常に表示。白フチ＋濃い線で淡色地図・航空写真どちらでも見える）
+  try{
+    const ol = await (await fetch("outline.geojson")).json();
+    if(!map.getSource("outline")) map.addSource("outline",{type:"geojson",data:ol});
+    if(!map.getLayer("outline-casing")) map.addLayer({id:"outline-casing",type:"line",source:"outline",
+      layout:{"line-join":"round","line-cap":"round"},
+      paint:{"line-color":"#ffffff","line-opacity":0.9,"line-width":["interpolate",["linear"],["zoom"],9,4,14,9]}});
+    if(!map.getLayer("outline")) map.addLayer({id:"outline",type:"line",source:"outline",
+      layout:{"line-join":"round","line-cap":"round"},
+      paint:{"line-color":"#1f3a36","line-width":["interpolate",["linear"],["zoom"],9,2,14,4.5]}});
+  }catch(e){/* outline.geojsonが無ければスキップ */}
   // ポスター掲示場レイヤ（R7参院選・初期非表示）
   try{
     const pj = await (await fetch("posters.geojson")).json();

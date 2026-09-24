@@ -168,6 +168,41 @@ for srec in sf.iterShapeRecords():
 with open(os.path.join(DOCS,"data.geojson"),"w") as f:
     json.dump({"type":"FeatureCollection","features":feats}, f, ensure_ascii=False)
 
+# ---- 市の外周線（小地域の辺のうち、隣と共有していない＝1回しか出ない辺をつなぐ） ----
+def city_outline(features):
+    from collections import Counter, defaultdict
+    cnt = Counter()
+    for ft in features:
+        g = ft["geometry"]
+        polys = [g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"]
+        for poly in polys:
+            for ring in poly:
+                for a, b in zip(ring, ring[1:]):
+                    a, b = tuple(a), tuple(b)
+                    if a != b: cnt[frozenset((a, b))] += 1
+    adj = defaultdict(set)
+    for e, c in cnt.items():
+        if c == 1:
+            a, b = tuple(e); adj[a].add(b); adj[b].add(a)
+    loops = []
+    while adj:
+        start = cur = next(iter(adj)); line = [start]
+        while adj.get(cur):
+            nxt = adj[cur].pop(); adj[nxt].discard(cur)
+            line.append(nxt); cur = nxt
+            if cur == start: break
+        for k in [k for k, v in adj.items() if not v]: del adj[k]
+        area = abs(sum(a[0]*b[1] - b[0]*a[1] for a, b in zip(line, line[1:]))) / 2
+        if area > 1e-6: loops.append([list(pt) for pt in line])  # 面積ほぼ0の切れ端（頂点ずれ由来）は捨てる
+    return loops
+
+outline = city_outline(feats)
+with open(os.path.join(DOCS,"outline.geojson"),"w") as f:
+    json.dump({"type":"FeatureCollection","features":[{"type":"Feature",
+        "geometry":{"type":"MultiLineString","coordinates":outline},
+        "properties":{"name":"小諸市"}}]}, f, ensure_ascii=False)
+print(f"市の外周線: {len(outline)}本・{sum(len(l) for l in outline)}点 → docs/outline.geojson")
+
 info = {}
 for c, a in agg.items():
     base = CHIKU_INFO.get(c, {"desc":"（対応表が未確認の小地域）","ku":"—"})
